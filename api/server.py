@@ -47,6 +47,9 @@ def download_library_json():
     from github import Github
     import base64 as _b64
 
+    print(f'DEBUG: GITHUB_TOKEN = {GITHUB_TOKEN[:20] if GITHUB_TOKEN else "EMPTY"}...')
+    print(f'DEBUG: GITHUB_REPO = {GITHUB_REPO}')
+
     g = Github(GITHUB_TOKEN)
     repo = g.get_repo(GITHUB_REPO)
     local = PUBLIC_DIR / 'library.json'
