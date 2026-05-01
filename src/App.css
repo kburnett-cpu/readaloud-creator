@@ -1,0 +1,55 @@
+/* Global styles for ReadAloud Creator */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Nunito', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Animation for spinner */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Optional: Add smooth transitions throughout */
+button,
+input,
+select,
+textarea {
+  transition: all 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #2E86C1;
+  box-shadow: 0 0 0 3px rgba(46, 134, 193, 0.1);
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+  body {
+    font-size: 14px;
+  }
+}
