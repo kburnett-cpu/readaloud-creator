@@ -3,53 +3,42 @@
  *
  * Polls the Railway backend for the status of an ongoing book creation job.
  * Called repeatedly by the frontend during book creation.
- *
- * Query params:
- * - jobId: The job ID returned from /create-book
- *
- * Environment variables needed:
- * - RAILWAY_API_URL: Base URL of the Railway backend
- * - PIPELINE_SECRET: Shared secret for authenticating with Railway backend
  */
 
 const RAILWAY_API_URL = process.env.RAILWAY_API_URL || 'http://localhost:5000'
 const PIPELINE_SECRET = process.env.PIPELINE_SECRET || 'dev-secret'
 
-export default async (req, res) => {
-  // Only allow GET requests
+const json = (data, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+
+export default async (req) => {
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' })
+    return json({ error: 'Method not allowed' }, 405)
   }
 
   try {
-    const { jobId } = req.query
+    const jobId = new URL(req.url).searchParams.get('jobId')
 
     if (!jobId) {
-      return res.status(400).json({ error: 'jobId query parameter required' })
+      return json({ error: 'jobId query parameter required' }, 400)
     }
 
-    // Fetch status from Railway backend
-    const backendUrl = `${RAILWAY_API_URL}/status/${jobId}`
-    const response = await fetch(backendUrl, {
+    const response = await fetch(`${RAILWAY_API_URL}/status/${jobId}`, {
       method: 'GET',
-      headers: {
-        'X-Api-Key': PIPELINE_SECRET,
-      },
+      headers: { 'X-Api-Key': PIPELINE_SECRET },
     })
 
     if (!response.ok) {
-      console.error('Status check failed:', response.status)
-      return res.status(response.status).json({
-        error: 'Failed to fetch status'
-      })
+      return json({ error: 'Failed to fetch status' }, response.status)
     }
 
     const data = await response.json()
-    return res.status(200).json(data)
+    return json(data, 200)
   } catch (error) {
     console.error('Error in book-status function:', error)
-    return res.status(500).json({
-      error: 'Server error while checking status'
-    })
+    return json({ error: 'Server error while checking status' }, 500)
   }
 }
