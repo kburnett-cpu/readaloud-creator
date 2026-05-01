@@ -175,7 +175,7 @@ export default function BookCreator() {
           Note: New books appear within 1-2 minutes after creation completes. If you don't see it yet, refresh the ReadAloud page.
         </p>
         <a
-          href={`https://readaloud.burnettgroupusa.com/?bookId=${newBookId}`}
+          href={`https://hareadaloud.netlify.app/?bookId=${newBookId}`}
           target="_blank"
           rel="noopener noreferrer"
           style={styles.linkBtn}
