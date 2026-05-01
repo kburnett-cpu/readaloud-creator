@@ -34,32 +34,75 @@ app = Flask(__name__)
 PIPELINE_SECRET = os.environ.get('PIPELINE_SECRET', 'dev-secret')
 GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
 GITHUB_REPO = os.environ.get('GITHUB_REPO', '')
-READALOUD_REPO_PATH = os.environ.get('READALOUD_REPO_PATH', '/app/readaloud')
+
+API_DIR = Path(__file__).parent
+PUBLIC_DIR = API_DIR / 'public'
 
 # In-memory job storage (sufficient for one teacher creating books at a time)
 # Structure: { jobId: { status: 'running'|'done'|'error', step: 'images', progress: 8, total: 16, bookId, error } }
 jobs = {}
 
-def ensure_readaloud_repo():
-    """Clone the main readaloud repo if it doesn't exist, or pull latest if it does."""
-    repo_path = Path(READALOUD_REPO_PATH)
-    clone_url = f'https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git'
+def download_library_json():
+    """Fetch current library.json from GitHub before each run so library step can append to it."""
+    from github import Github
+    import base64 as _b64
 
-    if not repo_path.exists():
-        print(f'Cloning {GITHUB_REPO} into {READALOUD_REPO_PATH}...')
-        subprocess.run(['git', 'clone', clone_url, str(repo_path)], check=True)
-        print('Clone complete.')
-    else:
-        print(f'Pulling latest from {GITHUB_REPO}...')
-        subprocess.run(['git', '-C', str(repo_path), 'pull'], check=True)
-        print('Pull complete.')
+    g = Github(GITHUB_TOKEN)
+    repo = g.get_repo(GITHUB_REPO)
+    local = PUBLIC_DIR / 'library.json'
+    local.parent.mkdir(parents=True, exist_ok=True)
 
-# Clone/pull the readaloud repo on startup
-if GITHUB_TOKEN and GITHUB_REPO:
     try:
-        ensure_readaloud_repo()
+        contents = repo.get_contents('public/library.json')
+        local.write_text(_b64.b64decode(contents.content).decode('utf-8'))
+        print('Downloaded library.json from GitHub')
     except Exception as e:
-        print(f'Warning: Could not clone/pull readaloud repo on startup: {e}')
+        print(f'library.json not found on GitHub ({e}), starting fresh')
+        local.write_text('{"stories":[]}')
+
+def push_to_github_api(job_id, book_title, book_id):
+    """Push generated files to GitHub using Git Trees API — no git binary required."""
+    from github import Github, InputGitTreeElement
+    import base64 as _b64
+
+    g = Github(GITHUB_TOKEN)
+    repo = g.get_repo(GITHUB_REPO)
+
+    ref = repo.get_git_ref('heads/main')
+    base_commit = repo.get_git_commit(ref.object.sha)
+    base_tree = base_commit.tree
+
+    elements = []
+
+    # library.json
+    lib_path = PUBLIC_DIR / 'library.json'
+    if lib_path.exists():
+        blob = repo.create_git_blob(lib_path.read_text('utf-8'), 'utf-8')
+        elements.append(InputGitTreeElement('public/library.json', '100644', 'blob', sha=blob.sha))
+
+    # All story files for this book
+    story_dir = PUBLIC_DIR / 'stories' / book_id
+    if story_dir.exists():
+        for f in sorted(story_dir.rglob('*')):
+            if not f.is_file():
+                continue
+            github_path = 'public/stories/' + book_id + '/' + str(f.relative_to(story_dir))
+            if f.suffix in ('.webp', '.jpg', '.mp3'):
+                blob = repo.create_git_blob(_b64.b64encode(f.read_bytes()).decode(), 'base64')
+            else:
+                blob = repo.create_git_blob(f.read_text('utf-8'), 'utf-8')
+            elements.append(InputGitTreeElement(github_path, '100644', 'blob', sha=blob.sha))
+
+    if not elements:
+        print(f'[{job_id}] No files to push')
+        return
+
+    new_tree = repo.create_git_tree(elements, base_tree)
+    new_commit = repo.create_git_commit(
+        f'Add book: {book_title} (teacher-created)', new_tree, [base_commit]
+    )
+    ref.edit(new_commit.sha)
+    print(f'[{job_id}] Pushed {len(elements)} files to GitHub via API')
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Authentication Middleware
@@ -94,8 +137,8 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
         # Update job status
         jobs[job_id]['status'] = 'running'
 
-        # Pull latest readaloud repo before creating a book
-        ensure_readaloud_repo()
+        # Download library.json before creating a book
+        download_library_json()
 
         # Generate book title from topic
         book_title = generate_book_title(topic, names)
@@ -103,7 +146,7 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
 
         # Build the create_book.py command
         cmd = [
-            'uv', 'run', 'create_book.py',
+            'python', 'create_book.py',
             '--title', book_title,
             '--grade-level', grade_level,
             '--reading-level', reading_level,
@@ -118,13 +161,13 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
         # Steps to run (skip audio for now to speed up)
         cmd.extend(['--steps', 'story,prompts,images,library'])
 
-        # Run create_book.py in the readaloud directory
+        # Run create_book.py in the api directory
         print(f'[{job_id}] Starting pipeline with command: {" ".join(cmd)}')
         jobs[job_id]['step'] = 'story'
 
         result = subprocess.run(
             cmd,
-            cwd=READALOUD_REPO_PATH,
+            cwd=str(API_DIR),
             capture_output=True,
             text=True,
             timeout=1800  # 30 minute timeout
@@ -145,7 +188,7 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
         jobs[job_id]['progress'] = 0
         jobs[job_id]['total'] = 1
 
-        push_to_github(job_id, book_title)
+        push_to_github_api(job_id, book_title, book_id)
 
         # Success!
         jobs[job_id]['status'] = 'done'
@@ -198,35 +241,6 @@ def slugify(text):
     s = ''.join(c if c.isalnum() or c in ('-', ' ') else '' for c in s)
     s = '-'.join(s.split())
     return s
-
-def push_to_github(job_id, book_title):
-    """Push changes to GitHub to trigger Netlify rebuild"""
-    if not GITHUB_TOKEN or not GITHUB_REPO:
-        print(f'[{job_id}] Skipping GitHub push (credentials not configured)')
-        return
-
-    try:
-        os.chdir(READALOUD_REPO_PATH)
-
-        # Configure git (needed in CI/CD environments)
-        subprocess.run(['git', 'config', 'user.name', 'ReadAloud Creator'], check=True, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'creator@readaloud.local'], check=True, capture_output=True)
-
-        # Add changes
-        subprocess.run(['git', 'add', 'public/stories/', 'public/library.json'], check=True, capture_output=True)
-
-        # Commit
-        commit_msg = f'Add book: {book_title} (teacher-created)'
-        subprocess.run(['git', 'commit', '-m', commit_msg], check=True, capture_output=True)
-
-        # Push (use token for auth)
-        push_url = f'https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git'
-        subprocess.run(['git', 'push', push_url, 'HEAD:main'], check=True, capture_output=True)
-
-        print(f'[{job_id}] Pushed to GitHub successfully')
-    except subprocess.CalledProcessError as e:
-        print(f'[{job_id}] GitHub push failed: {e}')
-        raise
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # API Endpoints
