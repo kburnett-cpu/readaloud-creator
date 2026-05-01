@@ -34,11 +34,32 @@ app = Flask(__name__)
 PIPELINE_SECRET = os.environ.get('PIPELINE_SECRET', 'dev-secret')
 GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
 GITHUB_REPO = os.environ.get('GITHUB_REPO', '')
-READALOUD_REPO_PATH = os.environ.get('READALOUD_REPO_PATH', '/home/kabur/readaloud')
+READALOUD_REPO_PATH = os.environ.get('READALOUD_REPO_PATH', '/app/readaloud')
 
 # In-memory job storage (sufficient for one teacher creating books at a time)
 # Structure: { jobId: { status: 'running'|'done'|'error', step: 'images', progress: 8, total: 16, bookId, error } }
 jobs = {}
+
+def ensure_readaloud_repo():
+    """Clone the main readaloud repo if it doesn't exist, or pull latest if it does."""
+    repo_path = Path(READALOUD_REPO_PATH)
+    clone_url = f'https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git'
+
+    if not repo_path.exists():
+        print(f'Cloning {GITHUB_REPO} into {READALOUD_REPO_PATH}...')
+        subprocess.run(['git', 'clone', clone_url, str(repo_path)], check=True)
+        print('Clone complete.')
+    else:
+        print(f'Pulling latest from {GITHUB_REPO}...')
+        subprocess.run(['git', '-C', str(repo_path), 'pull'], check=True)
+        print('Pull complete.')
+
+# Clone/pull the readaloud repo on startup
+if GITHUB_TOKEN and GITHUB_REPO:
+    try:
+        ensure_readaloud_repo()
+    except Exception as e:
+        print(f'Warning: Could not clone/pull readaloud repo on startup: {e}')
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Authentication Middleware
@@ -72,6 +93,9 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
     try:
         # Update job status
         jobs[job_id]['status'] = 'running'
+
+        # Pull latest readaloud repo before creating a book
+        ensure_readaloud_repo()
 
         # Generate book title from topic
         book_title = generate_book_title(topic, names)
