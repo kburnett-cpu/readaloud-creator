@@ -28,8 +28,8 @@ const STATUS_MESSAGES = {
 export default function BookCreator() {
   const [formData, setFormData] = useState({
     topic: '',
-    names: [],
-    nameInput: '',
+    namesInput: '',
+    vocabularyWords: '',
     gradeLevel: '3rd',
     featured: false,
   })
@@ -48,31 +48,15 @@ export default function BookCreator() {
     }))
   }
 
-  const handleAddName = () => {
-    const trimmed = formData.nameInput.trim()
-    if (trimmed && formData.names.length < 5) {
-      setFormData(prev => ({
-        ...prev,
-        names: [...prev.names, trimmed],
-        nameInput: '',
-      }))
-    }
-  }
-
-  const handleRemoveName = (idx) => {
-    setFormData(prev => ({
-      ...prev,
-      names: prev.names.filter((_, i) => i !== idx),
-    }))
-  }
 
   const validateForm = () => {
     if (!formData.topic.trim()) {
       setErrorMsg('Please enter a topic or story idea')
       return false
     }
-    if (formData.names.length === 0) {
-      setErrorMsg('Please add at least one student name')
+    const names = formData.namesInput.split(',').map(s => s.trim()).filter(Boolean)
+    if (names.length === 0) {
+      setErrorMsg('Please enter at least one student name')
       return false
     }
     return true
@@ -92,12 +76,16 @@ export default function BookCreator() {
     setCreationState('submitting')
 
     try {
+      const names = formData.namesInput.split(',').map(s => s.trim()).filter(Boolean)
+      const vocabularyWords = formData.vocabularyWords.split(',').map(s => s.trim()).filter(Boolean)
+
       const response = await fetch('/api/create-book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic: formData.topic,
-          names: formData.names,
+          names,
+          vocabularyWords,
           gradeLevel: formData.gradeLevel,
           readingLevel: GRADE_LEVELS[formData.gradeLevel],
           featured: formData.featured,
@@ -151,8 +139,8 @@ export default function BookCreator() {
   const handleReset = () => {
     setFormData({
       topic: '',
-      names: [],
-      nameInput: '',
+      namesInput: '',
+      vocabularyWords: '',
       gradeLevel: '3rd',
       featured: false,
     })
@@ -274,39 +262,30 @@ export default function BookCreator() {
 
       {/* Student Names */}
       <div style={styles.formGroup}>
-        <label style={styles.label}>Student Names * (up to 5)</label>
-        <div style={styles.nameInputGroup}>
-          <input
-            type="text"
-            value={formData.nameInput}
-            onChange={(e) => setFormData(prev => ({ ...prev, nameInput: e.target.value }))}
-            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddName())}
-            placeholder="Enter a name and press + or Enter"
-            style={styles.nameInput}
-          />
-          <button
-            type="button"
-            onClick={handleAddName}
-            style={styles.addNameBtn}
-            disabled={formData.names.length >= 5}
-          >
-            +
-          </button>
-        </div>
-        <div style={styles.namesList}>
-          {formData.names.map((name, idx) => (
-            <div key={idx} style={styles.nameTag}>
-              <span>{name}</span>
-              <button
-                type="button"
-                onClick={() => handleRemoveName(idx)}
-                style={styles.removeNameBtn}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
+        <label style={styles.label}>Student Names *</label>
+        <input
+          type="text"
+          name="namesInput"
+          value={formData.namesInput}
+          onChange={handleInputChange}
+          placeholder="Ashley, Marcos, Lucianna"
+          style={styles.textarea}
+        />
+        <p style={styles.hint}>Separate names with commas</p>
+      </div>
+
+      {/* Vocabulary Words */}
+      <div style={styles.formGroup}>
+        <label style={styles.label}>Vocabulary Words (optional)</label>
+        <input
+          type="text"
+          name="vocabularyWords"
+          value={formData.vocabularyWords}
+          onChange={handleInputChange}
+          placeholder="persevere, community, compassion"
+          style={styles.textarea}
+        />
+        <p style={styles.hint}>Words you want included in the story — separate with commas</p>
       </div>
 
       {/* Featured */}

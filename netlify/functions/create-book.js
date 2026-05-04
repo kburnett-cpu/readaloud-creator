@@ -20,7 +20,7 @@ export default async (req) => {
   }
 
   try {
-    const { topic, names, gradeLevel, readingLevel, featured } = await req.json()
+    const { topic, names, gradeLevel, readingLevel, featured, vocabularyWords } = await req.json()
 
     if (!topic || !names || names.length === 0 || !gradeLevel) {
       return json({ error: 'Missing required fields' }, 400)
@@ -32,7 +32,7 @@ export default async (req) => {
         'Content-Type': 'application/json',
         'X-Api-Key': PIPELINE_SECRET,
       },
-      body: JSON.stringify({ topic, names, gradeLevel, readingLevel, featured: !!featured }),
+      body: JSON.stringify({ topic, names, gradeLevel, readingLevel, featured: !!featured, vocabularyWords: vocabularyWords || [] }),
     })
 
     if (!response.ok) {

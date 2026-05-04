@@ -125,7 +125,7 @@ def require_auth(f):
 # Book Creation Pipeline
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featured):
+def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featured, vocabulary_words=[]):
     """
     Main book creation pipeline. Runs in a background thread.
 
@@ -143,8 +143,8 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
         # Download library.json before creating a book
         download_library_json()
 
-        # Generate book title from topic
-        book_title = generate_book_title(topic, names)
+        # Generate book title from topic using AI
+        book_title = generate_book_title_with_ai(topic, names)
         book_id = slugify(book_title)
 
         # Build the create_book.py command
@@ -153,7 +153,7 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
             '--title', book_title,
             '--grade-level', grade_level,
             '--reading-level', reading_level,
-            '--theme', build_theme_from_topic(topic, names),
+            '--theme', build_theme_from_topic(topic, names, vocabulary_words),
             '--pages', '16',
             '--tags', 'teacher-created,story',
         ]
@@ -210,21 +210,42 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
         jobs[job_id]['error'] = str(e)
         print(f'[{job_id}] Pipeline error: {e}')
 
-def generate_book_title(topic, names):
-    """Generate a book title from topic and names"""
-    # Simple strategy: use topic as title, may refine later
-    # Could be improved to use LLM or smarter heuristics
-    title = topic.strip()
-    if not title.endswith(('!', '?', '.')):
-        title += ''
-    # Truncate to reasonable length
-    if len(title) > 50:
-        title = title[:47] + '...'
-    return title
+def generate_book_title_with_ai(topic, names):
+    """Generate a book title from topic and names using Claude AI"""
+    import anthropic
 
-def build_theme_from_topic(topic, names):
+    try:
+        client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+        names_str = ', '.join(names) if names else 'students'
+
+        response = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=30,
+            messages=[{
+                'role': 'user',
+                'content': (
+                    f'Create a short, catchy children\'s book title (3-6 words) for this story:\n\n'
+                    f'Characters: {names_str}\n'
+                    f'Story idea: {topic}\n\n'
+                    f'Rules: The title should capture the heart of the story, NOT copy the prompt. '
+                    f'Return ONLY the title — no quotes, no punctuation at end, no explanation.'
+                )
+            }]
+        )
+        title = response.content[0].text.strip().strip('"\'')
+        return title if title else topic[:47]
+    except Exception as e:
+        print(f'Failed to generate title with AI: {e}, falling back to topic')
+        return topic[:47] if len(topic) > 47 else topic
+
+def build_theme_from_topic(topic, names, vocabulary_words=[]):
     """Build a detailed theme/story prompt from teacher input"""
     names_str = ', '.join(names)
+    words_section = ''
+    if vocabulary_words:
+        words_str = ', '.join(vocabulary_words)
+        words_section = f'\n\nVocabulary words to include naturally in the story: {words_str}'
+
     return f"""
 Create a story for students named {names_str}.
 
@@ -235,7 +256,7 @@ Guidelines:
 - Include all {len(names)} students as characters where possible
 - Set in a Caribbean/Dominican context unless the topic specifies otherwise
 - The story should have a clear beginning, middle, and end
-- Include positive messages about friendship, learning, and community
+- Include positive messages about friendship, learning, and community{words_section}
     """.strip()
 
 def slugify(text):
@@ -285,6 +306,7 @@ def create_book():
         grade_level = data.get('gradeLevel', '3rd')
         reading_level = data.get('readingLevel', 'D')
         featured = data.get('featured', False)
+        vocabulary_words = data.get('vocabularyWords', [])
 
         # Validation
         if not topic:
@@ -307,7 +329,7 @@ def create_book():
         # Start pipeline in background thread
         thread = threading.Thread(
             target=create_book_pipeline,
-            args=(job_id, topic, names, grade_level, reading_level, featured),
+            args=(job_id, topic, names, grade_level, reading_level, featured, vocabulary_words),
             daemon=True,
         )
         thread.start()
