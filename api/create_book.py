@@ -102,7 +102,7 @@ STORY_SYSTEM = """You are an expert children's book author writing for Hope Acad
 You write warm, joyful English storybooks for students learning English across all grade levels.
 Characters are Dominican unless the theme specifies otherwise (e.g., Biblical stories use ancient Middle Eastern settings).
 For reading levels Pre-A through E: Each page has exactly ONE short sentence. Keep vocabulary simple and concrete.
-For reading level F (5th grade): Each page has 2-4 sentences forming a complete paragraph. Use richer vocabulary and more complex sentence structures appropriate for 10-11 year olds."""
+For reading level F (5th-6th grade): Each page has 2-4 sentences forming a complete paragraph. Use richer vocabulary and more complex sentence structures appropriate for 10-12 year olds."""
 
 STORY_USER = """Write a {num_pages}-page children's storybook with these parameters:
 
@@ -624,7 +624,7 @@ def main():
     )
     parser.add_argument("--title",          help="Book title (required for new books)")
     parser.add_argument("--id",             help="Book ID slug (auto-derived from title if omitted)")
-    parser.add_argument("--grade-level",    default="PreK", choices=["PreK", "K", "1st", "2nd", "3rd", "5th"],
+    parser.add_argument("--grade-level",    default="PreK", choices=["PreK", "K", "1st", "2nd", "3rd", "4th", "5th", "6th"],
                         help="Grade level (default: PreK)")
     parser.add_argument("--reading-level",  default="A", choices=["Pre-A", "A", "B", "C", "D", "E", "F"],
                         help="Reading level (default: A)")

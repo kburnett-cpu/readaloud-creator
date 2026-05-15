@@ -6,7 +6,7 @@ const GRADE_LEVELS = {
   '1st': 'B',
   '2nd': 'C',
   '3rd': 'D',
-  '4th': 'F',
+  '4th': 'E',
   '5th': 'F',
   '6th': 'F',
 }
