@@ -140,12 +140,34 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
         # Update job status
         jobs[job_id]['status'] = 'running'
 
+        # Validate required environment variables
+        required_env = {
+            'ANTHROPIC_API_KEY': 'Claude API key',
+            'GEMINI_API_KEY': 'Gemini API key',
+            'GITHUB_TOKEN': 'GitHub PAT',
+            'GITHUB_REPO': 'GitHub repo (format: user/repo)',
+        }
+        missing = [f"{var} ({desc})" for var, desc in required_env.items() if not os.environ.get(var)]
+        if missing:
+            jobs[job_id]['status'] = 'error'
+            jobs[job_id]['error'] = f'Missing environment variables: {", ".join(missing)}'
+            print(f'[{job_id}] Missing required config: {", ".join(missing)}')
+            return
+
         # Download library.json before creating a book
         download_library_json()
 
         # Generate book title from topic using AI
         book_title = generate_book_title_with_ai(topic, names)
         book_id = slugify(book_title)
+
+        # Check if create_book.py exists
+        create_book_path = API_DIR / 'create_book.py'
+        if not create_book_path.exists():
+            jobs[job_id]['status'] = 'error'
+            jobs[job_id]['error'] = f'create_book.py not found at {create_book_path}'
+            print(f'[{job_id}] FATAL: create_book.py not found at {create_book_path}')
+            return
 
         # Build the create_book.py command
         cmd = [
@@ -166,6 +188,7 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
 
         # Run create_book.py in the api directory
         print(f'[{job_id}] Starting pipeline with command: {" ".join(cmd)}')
+        print(f'[{job_id}] Working directory: {API_DIR}')
         jobs[job_id]['step'] = 'story'
 
         result = subprocess.run(
@@ -181,7 +204,10 @@ def create_book_pipeline(job_id, topic, names, grade_level, reading_level, featu
             print(f'STDOUT: {result.stdout}')
             print(f'STDERR: {result.stderr}')
             jobs[job_id]['status'] = 'error'
-            jobs[job_id]['error'] = 'Book creation pipeline failed. Check server logs.'
+            # Include actual error details for debugging
+            error_detail = result.stderr if result.stderr else result.stdout
+            error_msg = error_detail.split('\n')[-2] if error_detail else 'Unknown error'
+            jobs[job_id]['error'] = f'Book creation pipeline failed: {error_msg}'
             return
 
         print(f'[{job_id}] create_book.py completed successfully')
